@@ -13,11 +13,12 @@ include(utils.cmake)
 
 add_subdirectory(${LibsDir}/glfw)
 add_subdirectory(${LibsDir}/webgpu)
-# This new little library is for creating the WebGPU surface from a GLFW window
 add_subdirectory(${LibsDir}/glfw3webgpu)
 
 add_executable(App
-	${SourceDir}/main.cpp
+    ${SourceDir}/main.cpp
+    ${SourceDir}/webgpu-utils.h
+    ${SourceDir}/webgpu-utils.cpp
 )
 
 # Don't forget to add glfw3webgpu here as well
