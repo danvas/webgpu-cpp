@@ -25,7 +25,13 @@ else()
 endif()
 
 
-# Add GLFW library
-set(GlfwLibPath ${LibsDir}/glfw)
-add_subdirectory(${GlfwLibPath})
-target_link_libraries(App PRIVATE glfw)
+# Link libraries
+add_subdirectory(${LibsDir}/glfw)
+add_subdirectory(${LibsDir}/webgpu)
+add_subdirectory(${LibsDir}/glfw3webgpu)
+target_link_libraries(App PRIVATE glfw webgpu glfw3webgpu)
+
+# The application's binary must find wgpu.dll or libwgpu.so at runtime,
+# so we automatically copy it (it's called WGPU_RUNTIME_LIB in general)
+# next to the binary.
+target_copy_webgpu_binaries(App)
