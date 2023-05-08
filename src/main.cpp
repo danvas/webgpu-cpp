@@ -76,6 +76,28 @@ int main(int, char **)
     std::cout << " - " << feat << std::endl;
   }
 
+  std::cout << "Requesting device..." << std::endl;
+
+  WGPUDeviceDescriptor deviceDesc = {};
+  deviceDesc.nextInChain = nullptr;
+  deviceDesc.label = "My Device";       // anything works here, that's your call
+  deviceDesc.requiredFeaturesCount = 0; // we do not require any specific feature
+  deviceDesc.requiredLimits = nullptr;  // we do not require any specific limit
+  deviceDesc.defaultQueue.nextInChain = nullptr;
+  deviceDesc.defaultQueue.label = "The default queue";
+  WGPUDevice device = requestDevice(adapter, &deviceDesc);
+
+  auto onDeviceError = [](WGPUErrorType type, char const *message, void * /* pUserData */)
+  {
+    std::cout << "Uncaptured device error: type " << type;
+    if (message)
+      std::cout << " (" << message << ")";
+    std::cout << std::endl;
+  };
+  wgpuDeviceSetUncapturedErrorCallback(device, onDeviceError, nullptr /* pUserData */);
+
+  std::cout << "Got device: " << device << std::endl;
+
   while (!glfwWindowShouldClose(window))
   {
     // Check whether the user clicked on the close button (and any other
@@ -85,6 +107,7 @@ int main(int, char **)
 
   // Cleanup WebGPU instance
   wgpuInstanceRelease(instance);
+  wgpuDeviceRelease(device);
   wgpuAdapterRelease(adapter);
 
   glfwDestroyWindow(window);
