@@ -40,7 +40,8 @@ int main(int, char **)
     return 1;
   }
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  GLFWwindow *window = glfwCreateWindow(640, 480, "This is WebGPU", NULL, NULL);
+  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+  GLFWwindow *window = glfwCreateWindow(640, 480, "Pretty WebGPU", NULL, NULL);
   if (!window)
   {
     std::cerr << "Could not open window!" << std::endl;
@@ -109,34 +110,89 @@ int main(int, char **)
   // };
   // wgpuQueueOnSubmittedWorkDone(queue, onQueueWorkDone, nullptr /* pUserData */);
 
-  WGPUCommandEncoderDescriptor encoderDesc = {};
-  encoderDesc.nextInChain = nullptr;
-  encoderDesc.label = "My command encoder";
-  WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+  /**
+   * The Swap Chain is something that is not exposed in the JavaScript version of the API.
+   * Like the notion of surface that we have met already, by the way.
+   * The web browser takes care of it and does not offer any option.
+   */
+  std::cout << "Creating swapchain device..." << std::endl;
+  WGPUSwapChainDescriptor swapChainDesc = {};
+  swapChainDesc.width = 640;
+  swapChainDesc.height = 480;
 
-  // Use the encoder to write instructions (debug placeholder for now)
-  wgpuCommandEncoderInsertDebugMarker(encoder, "Do one thing");
-  wgpuCommandEncoderInsertDebugMarker(encoder, "Do another thing");
+  WGPUTextureFormat swapChainFormat = wgpuSurfaceGetPreferredFormat(surface, adapter);
+  swapChainDesc.format = swapChainFormat;
+  // We use the swap chain textures as targets for a Render Pass;
+  // dictates the way the GPU organizes its memory
+  swapChainDesc.usage = WGPUTextureUsage_RenderAttachment;
+  // Tell which texture from the waiting queue must be presented at each frame: Immediate, Mailbox, or Fifo
+  swapChainDesc.presentMode = WGPUPresentMode_Fifo;
+  WGPUSwapChain swapChain = wgpuDeviceCreateSwapChain(device, surface, &swapChainDesc);
+  std::cout << "Swapchain: " << swapChain << std::endl;
 
-  WGPUCommandBufferDescriptor cmdBufferDescriptor = {};
-  cmdBufferDescriptor.nextInChain = nullptr;
-  cmdBufferDescriptor.label = "Command buffer";
-  WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &cmdBufferDescriptor);
-
-  // Finally submit the command queue
-  std::cout << "Submitting command..." << std::endl;
-  wgpuQueueSubmit(queue, 1, &command);
   while (!glfwWindowShouldClose(window))
   {
     // Check whether the user clicked on the close button (and any other
     // mouse/key event, which we don't use so far)
     glfwPollEvents();
+    WGPUTextureView nextTexture = wgpuSwapChainGetCurrentTextureView(swapChain);
+    if (!nextTexture)
+    {
+      std::cerr << "Cannot acquire next swap chain texture" << std::endl;
+      break;
+    }
+    WGPUCommandEncoderDescriptor commandEncoderDesc = {};
+    commandEncoderDesc.nextInChain = nullptr;
+    commandEncoderDesc.label = "nvCommand encoder";
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &commandEncoderDesc);
+
+    // Describe a render pass, which targets the texture view
+    WGPURenderPassDescriptor renderPassDesc = {};
+    WGPURenderPassColorAttachment renderPassColorAttachment = {};
+
+    // The attachment is tied to the view returned by the swap chain, so
+    // that the render pass draws directly on the screen.
+    renderPassColorAttachment.view = nextTexture;
+
+    // Not relevant here because we don't use multi-sampling
+    renderPassColorAttachment.resolveTarget = nullptr;
+    renderPassColorAttachment.loadOp = WGPULoadOp_Clear;
+    renderPassColorAttachment.storeOp = WGPUStoreOp_Store;
+    renderPassColorAttachment.clearValue = WGPUColor{0.9, 0.1, 0.2, 1.0};
+    renderPassDesc.colorAttachmentCount = 1;
+    renderPassDesc.colorAttachments = &renderPassColorAttachment;
+
+    // No depth buffer (for now)
+    renderPassDesc.depthStencilAttachment = nullptr;
+
+    // We don't use timers (for now)
+    renderPassDesc.timestampWriteCount = 0;
+    renderPassDesc.timestampWrites = nullptr;
+
+    renderPassDesc.nextInChain = nullptr;
+
+    // Create the render pass. We end it immediately because we use its builtin
+    // mechanism for clearing the screen wehn it begins (see descriptor)
+    WGPURenderPassEncoder renderPass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
+    wgpuRenderPassEncoderEnd(renderPass);
+
+    wgpuTextureViewRelease(nextTexture);
+
+    WGPUCommandBufferDescriptor cmdBufferDescriptor = {};
+    cmdBufferDescriptor.nextInChain = nullptr;
+    cmdBufferDescriptor.label = "Command buffer";
+    WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &cmdBufferDescriptor);
+    wgpuQueueSubmit(queue, 1, &command);
+
+    // We can tell the swap chain to present the next texture.
+    wgpuSwapChainPresent(swapChain);
   }
 
   // Cleanup WebGPU instance
   wgpuInstanceRelease(instance);
   wgpuDeviceRelease(device);
   wgpuAdapterRelease(adapter);
+  wgpuSwapChainRelease(swapChain);
 
   glfwDestroyWindow(window);
 
