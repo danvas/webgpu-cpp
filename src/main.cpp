@@ -98,6 +98,34 @@ int main(int, char **)
 
   std::cout << "Got device: " << device << std::endl;
 
+  WGPUQueue queue = wgpuDeviceGetQueue(device);
+
+  // The wgpuQueueOnSubmittedWorkDone is not implemented by our wgpu-native backend.
+  // Using it will result in a null pointer exception so do not copy the above code block.
+  // Uncomment the following when wgpu-native backend implements this function.
+  // auto onQueueWorkDone = [](WGPUQueueWorkDoneStatus status, void * /* pUserData */)
+  // {
+  //   std::cout << "Queued work finished with status: " << status << std::endl;
+  // };
+  // wgpuQueueOnSubmittedWorkDone(queue, onQueueWorkDone, nullptr /* pUserData */);
+
+  WGPUCommandEncoderDescriptor encoderDesc = {};
+  encoderDesc.nextInChain = nullptr;
+  encoderDesc.label = "My command encoder";
+  WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &encoderDesc);
+
+  // Use the encoder to write instructions (debug placeholder for now)
+  wgpuCommandEncoderInsertDebugMarker(encoder, "Do one thing");
+  wgpuCommandEncoderInsertDebugMarker(encoder, "Do another thing");
+
+  WGPUCommandBufferDescriptor cmdBufferDescriptor = {};
+  cmdBufferDescriptor.nextInChain = nullptr;
+  cmdBufferDescriptor.label = "Command buffer";
+  WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &cmdBufferDescriptor);
+
+  // Finally submit the command queue
+  std::cout << "Submitting command..." << std::endl;
+  wgpuQueueSubmit(queue, 1, &command);
   while (!glfwWindowShouldClose(window))
   {
     // Check whether the user clicked on the close button (and any other
