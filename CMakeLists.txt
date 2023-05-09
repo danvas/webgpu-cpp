@@ -17,8 +17,6 @@ add_subdirectory(${LibsDir}/glfw3webgpu)
 
 add_executable(App
     ${SourceDir}/main.cpp
-    ${SourceDir}/webgpu-utils.h
-    ${SourceDir}/webgpu-utils.cpp
 )
 
 # Don't forget to add glfw3webgpu here as well
