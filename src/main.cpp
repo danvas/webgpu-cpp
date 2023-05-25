@@ -3,7 +3,7 @@
  *   https://github.com/eliemichel/LearnWebGPU
  *
  * MIT License
- * Copyright (c) 2022 Elie Michel
+ * Copyright (c) 2022-2023 Elie Michel
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -29,14 +29,11 @@
 
 #define WEBGPU_CPP_IMPLEMENTATION
 #include <webgpu/webgpu.hpp>
-#include <webgpu/wgpu.h> // wgpuTextureViewDrop
 
 #include <iostream>
 #include <cassert>
 
 #include "webgpu-release.h"
-
-#define UNUSED(x) (void)x;
 
 using namespace wgpu;
 
@@ -66,23 +63,63 @@ int main(int, char **)
 
   std::cout << "Requesting adapter..." << std::endl;
   Surface surface = glfwGetWGPUSurface(instance, window);
-  RequestAdapterOptions adapterOpts{};
+  RequestAdapterOptions adapterOpts;
   adapterOpts.compatibleSurface = surface;
   Adapter adapter = instance.requestAdapter(adapterOpts);
   std::cout << "Got adapter: " << adapter << std::endl;
 
+  SupportedLimits supportedLimits;
+  adapter.getLimits(&supportedLimits);
+
   std::cout << "Requesting device..." << std::endl;
-  DeviceDescriptor deviceDesc{};
+  // Don't forget to = Default
+  RequiredLimits requiredLimits = Default;
+  // We use at most 1 vertex attribute for now
+  requiredLimits.limits.maxVertexAttributes = 1;
+  // We should also tell that we use 1 vertex buffers
+  requiredLimits.limits.maxVertexBuffers = 1;
+  // Maximum size of a buffer is 6 vertices of 2 float each
+  requiredLimits.limits.maxBufferSize = 6 * 2 * sizeof(float);
+  // Maximum stride between 2 consecutive vertices in the vertex buffer
+  requiredLimits.limits.maxVertexBufferArrayStride = 2 * sizeof(float);
+  // This must be set even if we do not use storage buffers for now
+  requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
+  requiredLimits.limits.minUniformBufferOffsetAlignment = supportedLimits.limits.minUniformBufferOffsetAlignment;
+
+  DeviceDescriptor deviceDesc;
   deviceDesc.label = "My Device";
   deviceDesc.requiredFeaturesCount = 0;
-  deviceDesc.requiredLimits = nullptr;
+  // FIXME: following causes runtime error...
+  deviceDesc.requiredLimits = &requiredLimits;
+  // Could not get WebGPU adapter: LimitsExceeded(FailedLimit { name: "min_storage_buffer_offset_alignment", requested: 0, allowed: 256 })
+  // Got device: <wgpu::Device 0x0>
+  // thread '<unnamed>' panicked at 'invalid DeviceId', src/lib.rs:210:5
+  // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+  // fatal runtime error: failed to initiate panic, error 5
   deviceDesc.defaultQueue.label = "The default queue";
   Device device = adapter.requestDevice(deviceDesc);
   std::cout << "Got device: " << device << std::endl;
 
+  adapter.getLimits(&supportedLimits);
+  std::cout << "adapter.maxVertexAttributes: " << supportedLimits.limits.maxVertexAttributes << std::endl;
+
+  device.getLimits(&supportedLimits);
+  std::cout << "device.maxVertexAttributes: " << supportedLimits.limits.maxVertexAttributes << std::endl;
+
+  // Personally I get:
+  //   adapter.maxVertexAttributes: 16
+  //   device.maxVertexAttributes: 8
+
+  // Add an error callback for more debug info
+  auto h = device.setUncapturedErrorCallback([](ErrorType type, char const *message)
+                                             {
+		std::cout << "Device error: type " << type;
+		if (message) std::cout << " (message: " << message << ")";
+		std::cout << std::endl; });
+
   Queue queue = device.getQueue();
 
-  std::cout << "Creating swapchain device..." << std::endl;
+  std::cout << "Creating swapchain..." << std::endl;
 #ifdef WEBGPU_BACKEND_WGPU
   TextureFormat swapChainFormat = surface.getPreferredFormat(adapter);
 #else
@@ -99,17 +136,15 @@ int main(int, char **)
 
   std::cout << "Creating shader module..." << std::endl;
   const char *shaderSource = R"(
+// The `@location(0)` attribute means that this input variable is described
+// by the vertex buffer layout at index 0 in the `pipelineDesc.vertex.buffers`
+// array.
+// The type `vec2f` must comply with what we will declare in the layout.
+// The argument name `in_vertex_position` is up to you, it is only internal to
+// the shader code!
 @vertex
-fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-	var p = vec2f(0.0, 0.0);
-	if (in_vertex_index == 0u) {
-		p = vec2f(-0.5, -0.5);
-	} else if (in_vertex_index == 1u) {
-		p = vec2f(0.5, -0.5);
-	} else {
-		p = vec2f(0.0, 0.5);
-	}
-	return vec4f(p, 0.0, 1.0);
+fn vs_main(@location(0) in_vertex_position: vec2f) -> @builtin(position) vec4f {
+	return vec4f(in_vertex_position, 0.0, 1.0);
 }
 
 @fragment
@@ -117,21 +152,16 @@ fn fs_main() -> @location(0) vec4f {
     return vec4f(0.0, 0.4, 1.0, 1.0);
 }
 )";
-  ShaderModuleDescriptor shaderDesc;
-#ifdef WEBGPU_BACKEND_WGPU
-  shaderDesc.hintCount = 0;
-  shaderDesc.hints = nullptr;
-#endif
 
-  // Use the extension mechanism to load a WGSL shader source code
   ShaderModuleWGSLDescriptor shaderCodeDesc;
-  // Set the chained struct's header
   shaderCodeDesc.chain.next = nullptr;
   shaderCodeDesc.chain.sType = SType::ShaderModuleWGSLDescriptor;
-  // Connect the chain
+  ShaderModuleDescriptor shaderDesc;
   shaderDesc.nextInChain = &shaderCodeDesc.chain;
 
 #ifdef WEBGPU_BACKEND_WGPU
+  shaderDesc.hintCount = 0;
+  shaderDesc.hints = nullptr;
   shaderCodeDesc.code = shaderSource;
 #else
   shaderCodeDesc.source = shaderSource;
@@ -144,32 +174,36 @@ fn fs_main() -> @location(0) vec4f {
   RenderPipelineDescriptor pipelineDesc;
 
   // Vertex fetch
-  // (We don't use any input buffer so far)
-  pipelineDesc.vertex.bufferCount = 0;
-  pipelineDesc.vertex.buffers = nullptr;
+  VertexAttribute vertexAttrib;
+  // == Per attribute ==
+  // Corresponds to @location(...)
+  vertexAttrib.shaderLocation = 0;
+  // Means vec2<f32> in the shader
+  vertexAttrib.format = VertexFormat::Float32x2;
+  // Index of the first element
+  vertexAttrib.offset = 0;
 
-  // Vertex shader
+  VertexBufferLayout vertexBufferLayout;
+  // [...] Build vertex buffer layout
+  vertexBufferLayout.attributeCount = 1;
+  vertexBufferLayout.attributes = &vertexAttrib;
+  // == Common to attributes from the same buffer ==
+  vertexBufferLayout.arrayStride = 2 * sizeof(float);
+  vertexBufferLayout.stepMode = VertexStepMode::Vertex;
+
+  pipelineDesc.vertex.bufferCount = 1;
+  pipelineDesc.vertex.buffers = &vertexBufferLayout;
+
   pipelineDesc.vertex.module = shaderModule;
   pipelineDesc.vertex.entryPoint = "vs_main";
   pipelineDesc.vertex.constantCount = 0;
   pipelineDesc.vertex.constants = nullptr;
 
-  // Primitive assembly and rasterization
-  // Each sequence of 3 vertices is considered as a triangle
   pipelineDesc.primitive.topology = PrimitiveTopology::TriangleList;
-  // We'll see later how to specify the order in which vertices should be
-  // connected. When not specified, vertices are considered sequentially.
   pipelineDesc.primitive.stripIndexFormat = IndexFormat::Undefined;
-  // The face orientation is defined by assuming that when looking
-  // from the front of the face, its corner vertices are enumerated
-  // in the counter-clockwise (CCW) order.
   pipelineDesc.primitive.frontFace = FrontFace::CCW;
-  // But the face orientation does not matter much because we do not
-  // cull (i.e. "hide") the faces pointing away from us (which is often
-  // used for optimization).
   pipelineDesc.primitive.cullMode = CullMode::None;
 
-  // Fragment shader
   FragmentState fragmentState;
   pipelineDesc.fragment = &fragmentState;
   fragmentState.module = shaderModule;
@@ -177,13 +211,10 @@ fn fs_main() -> @location(0) vec4f {
   fragmentState.constantCount = 0;
   fragmentState.constants = nullptr;
 
-  // Configure blend state
   BlendState blendState;
-  // Usual alpha blending for the color:
   blendState.color.srcFactor = BlendFactor::SrcAlpha;
   blendState.color.dstFactor = BlendFactor::OneMinusSrcAlpha;
   blendState.color.operation = BlendOperation::Add;
-  // We leave the target alpha untouched:
   blendState.alpha.srcFactor = BlendFactor::Zero;
   blendState.alpha.dstFactor = BlendFactor::One;
   blendState.alpha.operation = BlendOperation::Add;
@@ -191,29 +222,49 @@ fn fs_main() -> @location(0) vec4f {
   ColorTargetState colorTarget;
   colorTarget.format = swapChainFormat;
   colorTarget.blend = &blendState;
-  colorTarget.writeMask = ColorWriteMask::All; // We could write to only some of the color channels.
+  colorTarget.writeMask = ColorWriteMask::All;
 
-  // We have only one target because our render pass has only one output color
-  // attachment.
   fragmentState.targetCount = 1;
   fragmentState.targets = &colorTarget;
 
-  // Depth and stencil tests are not used here
   pipelineDesc.depthStencil = nullptr;
 
-  // Multi-sampling
-  // Samples per pixel
   pipelineDesc.multisample.count = 1;
-  // Default value for the mask, meaning "all bits on"
   pipelineDesc.multisample.mask = ~0u;
-  // Default value as well (irrelevant for count = 1 anyways)
   pipelineDesc.multisample.alphaToCoverageEnabled = false;
 
-  // Pipeline layout
-  pipelineDesc.layout = nullptr;
+  PipelineLayoutDescriptor layoutDesc;
+  layoutDesc.bindGroupLayoutCount = 0;
+  layoutDesc.bindGroupLayouts = nullptr;
+  PipelineLayout layout = device.createPipelineLayout(layoutDesc);
+  pipelineDesc.layout = layout;
 
   RenderPipeline pipeline = device.createRenderPipeline(pipelineDesc);
   std::cout << "Render pipeline: " << pipeline << std::endl;
+
+  // Vertex buffer
+  // There are 2 floats per vertex, one for x and one for y.
+  // But in the end this is just a bunch of floats to the eyes of the GPU,
+  // the *layout* will tell how to interpret this.
+  std::vector<float> vertexData = {
+      -0.5, -0.5,
+      +0.5, -0.5,
+      +0.0, +0.5,
+
+      -0.55f, -0.5,
+      -0.05f, +0.5,
+      -0.55f, +0.5};
+  int vertexCount = static_cast<int>(vertexData.size() / 2);
+
+  // Create vertex buffer
+  BufferDescriptor bufferDesc;
+  bufferDesc.size = vertexData.size() * sizeof(float);
+  bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Vertex;
+  bufferDesc.mappedAtCreation = false;
+  Buffer vertexBuffer = device.createBuffer(bufferDesc);
+
+  // Upload geometry data to the buffer
+  queue.writeBuffer(vertexBuffer, 0, vertexData.data(), bufferDesc.size);
 
   while (!glfwWindowShouldClose(window))
   {
@@ -226,13 +277,13 @@ fn fs_main() -> @location(0) vec4f {
       return 1;
     }
 
-    CommandEncoderDescriptor commandEncoderDesc{};
+    CommandEncoderDescriptor commandEncoderDesc;
     commandEncoderDesc.label = "Command Encoder";
     CommandEncoder encoder = device.createCommandEncoder(commandEncoderDesc);
 
-    RenderPassDescriptor renderPassDesc{};
+    RenderPassDescriptor renderPassDesc;
 
-    RenderPassColorAttachment renderPassColorAttachment = {};
+    WGPURenderPassColorAttachment renderPassColorAttachment;
     renderPassColorAttachment.view = nextTexture;
     renderPassColorAttachment.resolveTarget = nullptr;
     renderPassColorAttachment.loadOp = LoadOp::Clear;
@@ -246,19 +297,19 @@ fn fs_main() -> @location(0) vec4f {
     renderPassDesc.timestampWrites = nullptr;
     RenderPassEncoder renderPass = encoder.beginRenderPass(renderPassDesc);
 
-    // In its overall outline, drawing a triangle is as simple as this:
-    // Select which render pipeline to use
     renderPass.setPipeline(pipeline);
-    // Draw 1 instance of a 3-vertices shape
-    renderPass.draw(3, 1, 0, 0);
+
+    // Set vertex buffer while encoding the render pass
+    renderPass.setVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
+
+    // We use the `vertexCount` variable instead of hard-coding the vertex count
+    renderPass.draw(vertexCount, 1, 0, 0);
 
     renderPass.end();
 
-    // This procedure is not handled by the wrapper because not standard,
-    // but as you can see there is no conversion needed whatsoever.
-    wgpuTextureViewDrop(nextTexture);
+    wgpuTextureViewRelease(nextTexture);
 
-    CommandBufferDescriptor cmdBufferDescriptor{};
+    CommandBufferDescriptor cmdBufferDescriptor;
     cmdBufferDescriptor.label = "Command buffer";
     CommandBuffer command = encoder.finish(cmdBufferDescriptor);
     queue.submit(command);
@@ -266,12 +317,10 @@ fn fs_main() -> @location(0) vec4f {
     swapChain.present();
   }
 
-  // Cleanup WebGPU instance
-  wgpuInstanceRelease(instance);
+  wgpuSwapChainRelease(swapChain);
   wgpuDeviceRelease(device);
   wgpuAdapterRelease(adapter);
-  wgpuSwapChainRelease(swapChain);
-
+  wgpuInstanceRelease(instance);
   glfwDestroyWindow(window);
   glfwTerminate();
 
