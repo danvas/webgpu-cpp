@@ -165,7 +165,8 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
   var out: VertexOutput;
-  out.position = vec4f(in.position, 0.0, 1.0);
+  let ratio = 640.0 / 480.0; // The width and height of the target surface
+  out.position = vec4f(in.position.x, in.position.y * ratio, 0.0, 1.0);
   out.color = in.color; // forward to the fragment shader
   return out;
 }
@@ -272,28 +273,37 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
   // There are 2 floats per vertex, one for x and one for y.
   // But in the end this is just a bunch of floats to the eyes of the GPU,
   // the *layout* will tell how to interpret this.
-  std::vector<float> vertexData = {
-      // x0,  y0,  r0,  g0,  b0
+  std::vector<float> pointData = {
+      // x,   y,     r,   g,   b
       -0.5, -0.5, 1.0, 0.0, 0.0,
-      // x1,  y1,  r1,  g1,  b1
       +0.5, -0.5, 0.0, 1.0, 0.0,
-      +0.0, +0.5, 0.0, 0.0, 1.0,
-
-      // Smaller triangle...
-      -0.55f, -0.5, 1.0, 1.0, 0.0,
-      -0.05f, +0.5, 1.0, 0.0, 1.0,
-      -0.55f, +0.5, 0.0, 1.0, 1.0};
-  int vertexCount = static_cast<int>(vertexData.size() / 5);
+      +0.5, +0.5, 0.0, 0.0, 1.0,
+      -0.5, +0.5, 1.0, 1.0, 0.0};
 
   // Create vertex buffer
   BufferDescriptor bufferDesc;
-  bufferDesc.size = vertexData.size() * sizeof(float);
+  bufferDesc.size = pointData.size() * sizeof(float);
   bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Vertex;
   bufferDesc.mappedAtCreation = false;
   Buffer vertexBuffer = device.createBuffer(bufferDesc);
+  queue.writeBuffer(vertexBuffer, 0, pointData.data(), bufferDesc.size);
+
+  // This is a list of indices referencing positions in the pointData
+  std::vector<uint16_t> indexData = {
+      0, 1, 2, // Triangle #0
+      0, 2, 3  // Triangle #1
+  };
+
+  int indexCount = static_cast<int>(indexData.size());
+
+  // Create index buffer
+  bufferDesc.size = indexData.size() * sizeof(uint16_t);
+  bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Index;
+  bufferDesc.mappedAtCreation = false;
+  Buffer indexBuffer = device.createBuffer(bufferDesc);
 
   // Upload geometry data to the buffer
-  queue.writeBuffer(vertexBuffer, 0, vertexData.data(), bufferDesc.size);
+  queue.writeBuffer(indexBuffer, 0, indexData.data(), bufferDesc.size);
 
   while (!glfwWindowShouldClose(window))
   {
@@ -329,10 +339,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     renderPass.setPipeline(pipeline);
 
     // Set vertex buffer while encoding the render pass
-    renderPass.setVertexBuffer(0, vertexBuffer, 0, vertexData.size() * sizeof(float));
+    renderPass.setVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
+    renderPass.setIndexBuffer(indexBuffer, IndexFormat::Uint16, 0, pointData.size() * sizeof(uint16_t));
 
     // We use the `vertexCount` variable instead of hard-coding the vertex count
-    renderPass.draw(vertexCount, 1, 0, 0);
+    renderPass.drawIndexed(indexCount, 1, 0, 0, 0);
 
     renderPass.end();
 
