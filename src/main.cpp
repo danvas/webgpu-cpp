@@ -34,6 +34,7 @@
 #include <cassert>
 
 #include "webgpu-release.h"
+#include "utils.h"
 
 using namespace wgpu;
 
@@ -268,17 +269,25 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
   RenderPipeline pipeline = device.createRenderPipeline(pipelineDesc);
   std::cout << "Render pipeline: " << pipeline << std::endl;
+  std::vector<float> pointData;
+  std::vector<uint16_t> indexData;
 
-  // Vertex buffer
-  // There are 2 floats per vertex, one for x and one for y.
-  // But in the end this is just a bunch of floats to the eyes of the GPU,
-  // the *layout* will tell how to interpret this.
-  std::vector<float> pointData = {
-      // x,   y,     r,   g,   b
-      -0.5, -0.5, 1.0, 0.0, 0.0,
-      +0.5, -0.5, 0.0, 1.0, 0.0,
-      +0.5, +0.5, 0.0, 0.0, 1.0,
-      -0.5, +0.5, 1.0, 1.0, 0.0};
+  bool success = loadGeometry(RESOURCE_DIR "webgpu.txt", pointData, indexData);
+  if (!success)
+  {
+    std::cerr << "Could not load geometry!" << std::endl;
+    return 1;
+  }
+  else
+  {
+    std::cout << "Loaded " << pointData.size() / 5 << " vertices and "
+              << indexData.size() << " indices." << std::endl;
+
+    for (int i = 0; i < static_cast<int>(pointData.size()); i++)
+    {
+      std::cout << pointData[i] << " ";
+    }
+  }
 
   // Create vertex buffer
   BufferDescriptor bufferDesc;
@@ -287,12 +296,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
   bufferDesc.mappedAtCreation = false;
   Buffer vertexBuffer = device.createBuffer(bufferDesc);
   queue.writeBuffer(vertexBuffer, 0, pointData.data(), bufferDesc.size);
-
-  // This is a list of indices referencing positions in the pointData
-  std::vector<uint16_t> indexData = {
-      0, 1, 2, // Triangle #0
-      0, 2, 3  // Triangle #1
-  };
 
   int indexCount = static_cast<int>(indexData.size());
 

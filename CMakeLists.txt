@@ -19,6 +19,10 @@ add_executable(App
     ${SourceDir}/main.cpp
 )
 
+target_compile_definitions(App PRIVATE
+		RESOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/"
+)
+
 # Don't forget to add glfw3webgpu here as well
 target_link_libraries(App PRIVATE glfw webgpu glfw3webgpu)
 
