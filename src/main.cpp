@@ -80,7 +80,7 @@ int main(int, char **)
   // We should also tell that we use 1 vertex buffers
   requiredLimits.limits.maxVertexBuffers = 1;
   // Maximum size of a buffer is 4 vertices of 5 float each
-  requiredLimits.limits.maxBufferSize = 4 * 5 * sizeof(float);
+  requiredLimits.limits.maxBufferSize = 15 * 5 * sizeof(float);
   // Maximum stride between 2 consecutive vertices in the vertex buffer
   requiredLimits.limits.maxVertexBufferArrayStride = 5 * sizeof(float);
   requiredLimits.limits.maxInterStageShaderComponents = 3;
@@ -245,7 +245,10 @@ int main(int, char **)
   int indexCount = static_cast<int>(indexData.size());
 
   // Create index buffer
-  bufferDesc.size = indexData.size() * sizeof(uint16_t);
+  // TODO: Find out why this is type float and not uint16_t.
+  //       Type uint16_t causes crash:
+  //       thread '<unnamed>' panicked at 'Unable to write buffer: Transfer(UnalignedCopySize(30))', src/device.rs:747:10
+  bufferDesc.size = indexData.size() * sizeof(float);
   bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Index;
   bufferDesc.mappedAtCreation = false;
   Buffer indexBuffer = device.createBuffer(bufferDesc);
@@ -288,9 +291,12 @@ int main(int, char **)
 
     // Set vertex buffer while encoding the render pass
     renderPass.setVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
-    renderPass.setIndexBuffer(indexBuffer, IndexFormat::Uint16, 0, pointData.size() * sizeof(uint16_t));
+    // The second argument must correspond to the choice of uint16_t or uint32_t
+    // we've done when creating the index buffer.
+    renderPass.setIndexBuffer(indexBuffer, IndexFormat::Uint16, 0, indexData.size() * sizeof(uint16_t));
 
-    // We use the `vertexCount` variable instead of hard-coding the vertex count
+    // Replace `draw()` with `drawIndexed()` and `vertexCount` with `indexCount`
+    // The extra argument is an offset within the index buffer.
     renderPass.drawIndexed(indexCount, 1, 0, 0, 0);
 
     renderPass.end();
