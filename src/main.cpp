@@ -134,7 +134,7 @@ int main(int, char **)
   swapChainDesc.presentMode = PresentMode::Fifo;
   SwapChain swapChain = device.createSwapChain(surface, swapChainDesc);
   std::cout << "Swapchain: " << swapChain << std::endl;
-
+  std::cout << "Swapchain format: " << swapChainFormat << std::endl;
   std::cout << "Creating shader module..." << std::endl;
 
   ShaderModule shaderModule = loadShaderModule(RESOURCE_DIR "shader.wgsl", device);
