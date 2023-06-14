@@ -79,8 +79,8 @@ int main(int, char **)
   requiredLimits.limits.maxVertexAttributes = 2;
   // We should also tell that we use 1 vertex buffers
   requiredLimits.limits.maxVertexBuffers = 1;
-  // Maximum size of a buffer is 6 vertices of 2 float each
-  requiredLimits.limits.maxBufferSize = 6 * 5 * sizeof(float);
+  // Maximum size of a buffer is 4 vertices of 5 float each
+  requiredLimits.limits.maxBufferSize = 4 * 5 * sizeof(float);
   // Maximum stride between 2 consecutive vertices in the vertex buffer
   requiredLimits.limits.maxVertexBufferArrayStride = 5 * sizeof(float);
   requiredLimits.limits.maxInterStageShaderComponents = 3;
@@ -136,63 +136,8 @@ int main(int, char **)
   std::cout << "Swapchain: " << swapChain << std::endl;
 
   std::cout << "Creating shader module..." << std::endl;
-  const char *shaderSource = R"(
-// The `@location(0)` attribute means that this input variable is described
-// by the vertex buffer layout at index 0 in the `pipelineDesc.vertex.buffers`
-// array.
-// The type `vec2f` must comply with what we will declare in the layout.
-// The argument name `in_vertex_position` is up to you, it is only internal to
-// the shader code!
-struct VertexInput {
-    @location(0) position: vec2f,
-    @location(1) color: vec3f,
-};
 
-/**
- * A structure with fields labeled with builtins and locations can also be used
- * as *output* of the vertex shader, which is also the input of the fragment
- * shader.
- */
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    // The location here does not refer to a vertex attribute, it just means
-    // that this field must be handled by the rasterizer.
-    // (It can also refer to another field of another struct that would be used
-    // as input to the fragment shader.)
-    @location(0) color: vec3f,
-};
-
-
-@vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
-  var out: VertexOutput;
-  let ratio = 640.0 / 480.0; // The width and height of the target surface
-  out.position = vec4f(in.position.x, in.position.y * ratio, 0.0, 1.0);
-  out.color = in.color; // forward to the fragment shader
-  return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return vec4f(in.color, 1.0);
-}
-)";
-
-  ShaderModuleWGSLDescriptor shaderCodeDesc;
-  shaderCodeDesc.chain.next = nullptr;
-  shaderCodeDesc.chain.sType = SType::ShaderModuleWGSLDescriptor;
-  ShaderModuleDescriptor shaderDesc;
-  shaderDesc.nextInChain = &shaderCodeDesc.chain;
-
-#ifdef WEBGPU_BACKEND_WGPU
-  shaderDesc.hintCount = 0;
-  shaderDesc.hints = nullptr;
-  shaderCodeDesc.code = shaderSource;
-#else
-  shaderCodeDesc.source = shaderSource;
-#endif
-
-  ShaderModule shaderModule = device.createShaderModule(shaderDesc);
+  ShaderModule shaderModule = loadShaderModule(RESOURCE_DIR "shader.wgsl", device);
   std::cout << "Shader module: " << shaderModule << std::endl;
 
   std::cout << "Creating render pipeline..." << std::endl;
@@ -330,7 +275,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     renderPassColorAttachment.resolveTarget = nullptr;
     renderPassColorAttachment.loadOp = LoadOp::Clear;
     renderPassColorAttachment.storeOp = StoreOp::Store;
-    renderPassColorAttachment.clearValue = Color{0.9, 0.1, 0.2, 1.0};
+    renderPassColorAttachment.clearValue = Color{0.05, 0.05, 0.05, 1.0};
     renderPassDesc.colorAttachmentCount = 1;
     renderPassDesc.colorAttachments = &renderPassColorAttachment;
 
