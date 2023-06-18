@@ -30,6 +30,7 @@
 #define WEBGPU_CPP_IMPLEMENTATION
 #include <webgpu/webgpu.hpp>
 
+#include <array>
 #include <iostream>
 #include <cassert>
 
@@ -37,6 +38,21 @@
 #include "utils.h"
 
 using namespace wgpu;
+
+/**
+ * The same structure as in the shader, replicated in C++
+ */
+struct MyUniforms
+{
+  // offset = 0 * sizeof(vec4f) -> OK
+  std::array<float, 4> color;
+  // offset = 16 = 4 * sizeof(f32) -> OK
+  float time;
+  float _pad[3];
+};
+
+// Have the compiler check byte alignment
+static_assert(sizeof(MyUniforms) % 16 == 0);
 
 int main(int, char **)
 {
@@ -219,9 +235,9 @@ int main(int, char **)
   // The binding index as used in the @binding attribute in the shader
   bindingLayout.binding = 0;
   // The stage that needs to access this resource
-  bindingLayout.visibility = ShaderStage::Vertex;
+  bindingLayout.visibility = ShaderStage::Vertex | ShaderStage::Fragment;
   bindingLayout.buffer.type = BufferBindingType::Uniform;
-  bindingLayout.buffer.minBindingSize = sizeof(float);
+  bindingLayout.buffer.minBindingSize = sizeof(MyUniforms);
 
   // Create a bind group layout
   BindGroupLayoutDescriptor bindGroupLayoutDesc;
@@ -281,8 +297,8 @@ int main(int, char **)
   queue.writeBuffer(indexBuffer, 0, indexData.data(), bufferDesc.size);
 
   // Create uniform buffer
-  // The buffer will only contain 1 float with the value of uTime
-  bufferDesc.size = sizeof(float);
+  // The buffer will only contain 1 float with the value of MyUniforms
+  bufferDesc.size = sizeof(MyUniforms);
   // Make sure to flag the buffer as BufferUsage::Uniform
   bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
   bufferDesc.mappedAtCreation = false;
@@ -298,7 +314,7 @@ int main(int, char **)
   // multiple uniform blocks.
   binding.offset = 0;
   // And we specify again the size of the buffer.
-  binding.size = sizeof(float);
+  binding.size = sizeof(MyUniforms);
 
   // A bind group contains one or multiple bindings
   BindGroupDescriptor bindGroupDesc{};
@@ -308,8 +324,14 @@ int main(int, char **)
   bindGroupDesc.entries = &binding;
   BindGroup bindGroup = device.createBindGroup(bindGroupDesc);
 
-  // float currentTime = 1.0f;
-  // queue.writeBuffer(uniformBuffer, 0, &currentTime, sizeof(float));
+  // Upload the initial value of the uniforms
+  MyUniforms uniforms;
+  uniforms.time = 1.0f;
+  uniforms.color = {0.0f, 1.0f, 0.4f, 1.0f};
+  // Upload only the time, whichever its order in the struct
+  queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, time), &uniforms.time, sizeof(MyUniforms::time));
+  // Upload only the color, whichever its order in the struct
+  queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, color), &uniforms.color, sizeof(MyUniforms::color));
 
   while (!glfwWindowShouldClose(window))
   {
@@ -323,8 +345,8 @@ int main(int, char **)
     }
 
     // Update uniform buffer
-    float t = static_cast<float>(glfwGetTime()); // glfwGetTime returns a double
-    queue.writeBuffer(uniformBuffer, 0, &t, sizeof(float));
+    uniforms.time = static_cast<float>(glfwGetTime()); // glfwGetTime returns a double
+    queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, time), &uniforms.time, sizeof(MyUniforms::time));
 
     CommandEncoderDescriptor commandEncoderDesc;
     commandEncoderDesc.label = "Command Encoder";
