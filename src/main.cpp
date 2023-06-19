@@ -108,6 +108,8 @@ int main(int, char **)
   requiredLimits.limits.maxBindGroups = 1;
   // We use at most 1 uniform buffer per stage
   requiredLimits.limits.maxUniformBuffersPerShaderStage = 1;
+  // Dynamic uniform
+  requiredLimits.limits.maxDynamicUniformBuffersPerPipelineLayout = 1;
   // Uniform structs have a size of maximum 16 float (more than what we need)
   requiredLimits.limits.maxUniformBufferBindingSize = 16 * 4;
 
@@ -125,11 +127,16 @@ int main(int, char **)
   Device device = adapter.requestDevice(deviceDesc);
   std::cout << "Got device: " << device << std::endl;
 
+  // Get device limits
+  SupportedLimits deviceSupportedLimits;
+  device.getLimits(&deviceSupportedLimits);
+  Limits deviceLimits = deviceSupportedLimits.limits;
+
   adapter.getLimits(&supportedLimits);
   std::cout << "adapter.maxVertexAttributes: " << supportedLimits.limits.maxVertexAttributes << std::endl;
 
-  device.getLimits(&supportedLimits);
-  std::cout << "device.maxVertexAttributes: " << supportedLimits.limits.maxVertexAttributes << std::endl;
+  device.getLimits(&deviceSupportedLimits);
+  std::cout << "device.maxVertexAttributes: " << deviceLimits.maxVertexAttributes << std::endl;
 
   // Personally I get:
   //   adapter.maxVertexAttributes: 16
@@ -238,6 +245,8 @@ int main(int, char **)
   bindingLayout.visibility = ShaderStage::Vertex | ShaderStage::Fragment;
   bindingLayout.buffer.type = BufferBindingType::Uniform;
   bindingLayout.buffer.minBindingSize = sizeof(MyUniforms);
+  // Make this binding dynamic so we can offset it between draw calls
+  bindingLayout.buffer.hasDynamicOffset = true;
 
   // Create a bind group layout
   BindGroupLayoutDescriptor bindGroupLayoutDesc;
@@ -297,8 +306,13 @@ int main(int, char **)
   queue.writeBuffer(indexBuffer, 0, indexData.data(), bufferDesc.size);
 
   // Create uniform buffer
+  // The stride of the uniform buffer is the largest of sizeof(MyUniforms)
+  // and device limits' minUniformBufferOffsetAlignment
+  uint32_t uniformStride = std::max(
+      (uint32_t)sizeof(MyUniforms),
+      (uint32_t)deviceLimits.minUniformBufferOffsetAlignment);
   // The buffer will only contain 1 float with the value of MyUniforms
-  bufferDesc.size = sizeof(MyUniforms);
+  bufferDesc.size = uniformStride + sizeof(MyUniforms);
   // Make sure to flag the buffer as BufferUsage::Uniform
   bufferDesc.usage = BufferUsage::CopyDst | BufferUsage::Uniform;
   bufferDesc.mappedAtCreation = false;
@@ -329,9 +343,12 @@ int main(int, char **)
   uniforms.time = 1.0f;
   uniforms.color = {0.0f, 1.0f, 0.4f, 1.0f};
   // Upload only the time, whichever its order in the struct
-  queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, time), &uniforms.time, sizeof(MyUniforms::time));
-  // Upload only the color, whichever its order in the struct
-  queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, color), &uniforms.color, sizeof(MyUniforms::color));
+  queue.writeBuffer(uniformBuffer, 0, &uniforms, sizeof(MyUniforms));
+
+  // Upload second value
+  uniforms.time = -1.0f;
+  uniforms.color = {1.0f, 1.0f, 1.0f, 0.7f};
+  queue.writeBuffer(uniformBuffer, uniformStride, &uniforms, sizeof(MyUniforms));
 
   while (!glfwWindowShouldClose(window))
   {
@@ -370,6 +387,8 @@ int main(int, char **)
 
     renderPass.setPipeline(pipeline);
 
+    uint32_t dynamicOffset = 0;
+
     // Set vertex buffer while encoding the render pass
     renderPass.setVertexBuffer(0, vertexBuffer, 0, pointData.size() * sizeof(float));
     // The second argument must correspond to the choice of uint16_t or uint32_t
@@ -377,12 +396,17 @@ int main(int, char **)
     renderPass.setIndexBuffer(indexBuffer, IndexFormat::Uint16, 0, indexData.size() * sizeof(uint16_t));
 
     // Set binding group
-    renderPass.setBindGroup(0, bindGroup, 0, nullptr);
+    dynamicOffset = 0 * uniformStride;
+    renderPass.setBindGroup(0, bindGroup, 1, &dynamicOffset);
 
     // Replace `draw()` with `drawIndexed()` and `vertexCount` with `indexCount`
     // The extra argument is an offset within the index buffer.
     renderPass.drawIndexed(indexCount, 1, 0, 0, 0);
 
+    // Set binding group with a different uniform offset
+    dynamicOffset = 1 * uniformStride;
+    renderPass.setBindGroup(0, bindGroup, 1, &dynamicOffset);
+    renderPass.drawIndexed(indexCount, 1, 0, 0, 0);
     renderPass.end();
 
     wgpuTextureViewRelease(nextTexture);
