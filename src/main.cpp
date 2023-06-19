@@ -281,6 +281,7 @@ int main(int, char **)
     {
       std::cout << pointData[i] << " ";
     }
+    std::cout << std::endl;
   }
 
   // Create vertex buffer
@@ -345,11 +346,6 @@ int main(int, char **)
   // Upload only the time, whichever its order in the struct
   queue.writeBuffer(uniformBuffer, 0, &uniforms, sizeof(MyUniforms));
 
-  // Upload second value
-  uniforms.time = -1.0f;
-  uniforms.color = {1.0f, 1.0f, 1.0f, 0.7f};
-  queue.writeBuffer(uniformBuffer, uniformStride, &uniforms, sizeof(MyUniforms));
-
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
@@ -360,10 +356,6 @@ int main(int, char **)
       std::cerr << "Cannot acquire next swap chain texture" << std::endl;
       return 1;
     }
-
-    // Update uniform buffer
-    uniforms.time = static_cast<float>(glfwGetTime()); // glfwGetTime returns a double
-    queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, time), &uniforms.time, sizeof(MyUniforms::time));
 
     CommandEncoderDescriptor commandEncoderDesc;
     commandEncoderDesc.label = "Command Encoder";
