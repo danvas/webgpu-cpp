@@ -7,7 +7,11 @@
 using namespace wgpu;
 namespace fs = std::filesystem;
 
-bool loadGeometry(const fs::path &path, std::vector<float> &pointData, std::vector<uint16_t> &indexData)
+bool loadGeometry(
+    const fs::path &path,
+    std::vector<float> &pointData,
+    std::vector<uint16_t> &indexData,
+    int dimensions)
 {
     // Check if the file exists
     if (!fs::exists(path))
@@ -66,8 +70,8 @@ bool loadGeometry(const fs::path &path, std::vector<float> &pointData, std::vect
         else if (currentSection == Section::Points)
         {
             std::istringstream iss(line);
-            // Get x, y, r, g, b
-            for (int i = 0; i < 5; ++i)
+            // Get x, y, z, r, g, b
+            for (int i = 0; i < dimensions + 3; ++i)
             {
                 iss >> value;
                 pointData.push_back(value);

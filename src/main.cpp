@@ -91,14 +91,13 @@ int main(int, char **)
   std::cout << "Requesting device..." << std::endl;
   // Don't forget to = Default
   RequiredLimits requiredLimits = Default;
-  // We use at most 1 vertex attribute for now
   requiredLimits.limits.maxVertexAttributes = 2;
   // We should also tell that we use 1 vertex buffers
   requiredLimits.limits.maxVertexBuffers = 1;
   // Maximum size of a buffer is 4 vertices of 5 float each
-  requiredLimits.limits.maxBufferSize = 15 * 5 * sizeof(float);
-  // Maximum stride between 2 consecutive vertices in the vertex buffer
-  requiredLimits.limits.maxVertexBufferArrayStride = 5 * sizeof(float);
+  requiredLimits.limits.maxBufferSize = 15 * 6 * sizeof(float);
+  // Maximum stride between consecutive vertices in the vertex buffer
+  requiredLimits.limits.maxVertexBufferArrayStride = 6 * sizeof(float);
   requiredLimits.limits.maxInterStageShaderComponents = 3;
   // This must be set even if we do not use storage buffers for now
   requiredLimits.limits.minStorageBufferOffsetAlignment = supportedLimits.limits.minStorageBufferOffsetAlignment;
@@ -179,20 +178,20 @@ int main(int, char **)
 
   // Position attribute
   vertexAttribs[0].shaderLocation = 0;
-  vertexAttribs[0].format = VertexFormat::Float32x2;
+  vertexAttribs[0].format = VertexFormat::Float32x3;
   vertexAttribs[0].offset = 0;
 
   // Color attribute
   vertexAttribs[1].shaderLocation = 1;
   vertexAttribs[1].format = VertexFormat::Float32x3; // different type!
-  vertexAttribs[1].offset = 2 * sizeof(float);       // non null offset!
+  vertexAttribs[1].offset = 3 * sizeof(float);       // non null offset!
 
   VertexBufferLayout vertexBufferLayout;
   // [...] Build vertex buffer layout
   vertexBufferLayout.attributeCount = (uint32_t)vertexAttribs.size();
   vertexBufferLayout.attributes = vertexAttribs.data();
   // Bigger stride
-  vertexBufferLayout.arrayStride = 5 * sizeof(float);
+  vertexBufferLayout.arrayStride = 6 * sizeof(float);
   vertexBufferLayout.stepMode = VertexStepMode::Vertex;
 
   pipelineDesc.vertex.bufferCount = 1;
@@ -266,7 +265,7 @@ int main(int, char **)
   std::vector<float> pointData;
   std::vector<uint16_t> indexData;
 
-  bool success = loadGeometry(RESOURCE_DIR "webgpu.txt", pointData, indexData);
+  bool success = loadGeometry(RESOURCE_DIR "pyramid.txt", pointData, indexData, 3);
   if (!success)
   {
     std::cerr << "Could not load geometry!" << std::endl;
@@ -357,6 +356,9 @@ int main(int, char **)
       return 1;
     }
 
+    // Update uniform buffer
+    uniforms.time = static_cast<float>(glfwGetTime()); // glfwGetTime returns a double
+    queue.writeBuffer(uniformBuffer, offsetof(MyUniforms, time), &uniforms.time, sizeof(MyUniforms::time));
     CommandEncoderDescriptor commandEncoderDesc;
     commandEncoderDesc.label = "Command Encoder";
     CommandEncoder encoder = device.createCommandEncoder(commandEncoderDesc);

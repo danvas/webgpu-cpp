@@ -15,7 +15,7 @@ struct MyUniforms {
 // The argument name `in_vertex_position` is up to you, it is only internal to
 // the shader code!
 struct VertexInput {
-    @location(0) position: vec2f,
+    @location(0) position: vec3f,
     @location(1) color: vec3f,
 };
 
@@ -38,8 +38,15 @@ struct VertexOutput {
 fn vs_main(in: VertexInput) -> VertexOutput {
   var out: VertexOutput;
   let ratio = 640.0 / 480.0; // The width and height of the target surface
-  var offset = vec2<f32>(0.0);
-  out.position = vec4f(in.position.x + offset.x, (in.position.y + offset.y) * ratio, 0.0, 1.0);
+  let angle = uMyUniforms.time; // you can multiply it go rotate faster
+  let alpha = cos(angle);
+  let beta = sin(angle);
+  var position = vec3<f32>(
+    in.position.x,
+    alpha * in.position.y + beta * in.position.z,
+    alpha * in.position.z - beta * in.position.y,
+  );
+  out.position = vec4<f32>(position.x, position.y * ratio, 0.0, 1.0);
   out.color = in.color; // forward to the fragment shader
   return out;
 }
