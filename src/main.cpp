@@ -112,6 +112,10 @@ int main(int, char **)
   // Uniform structs have a size of maximum 16 float (more than what we need)
   requiredLimits.limits.maxUniformBufferBindingSize = 16 * 4;
 
+  // Set the max limits on the texture's GPUExtent3D width and number of array layers
+  requiredLimits.limits.maxTextureDimension2D = 640;
+  requiredLimits.limits.maxTextureArrayLayers = 1;
+
   DeviceDescriptor deviceDesc;
   deviceDesc.label = "My Device";
   deviceDesc.requiredFeaturesCount = 0;
